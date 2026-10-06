@@ -1,0 +1,51 @@
+name: Train model
+
+# Started by hand from the Actions tab. Downloads the full dataset, retrains the model and
+# fails if the test MAE is above the quality gate. The model files are attached to the run
+# as an artifact; they are not committed automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      max_mae:
+        description: 'Quality gate: highest test MAE allowed (empty = value in config.json)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Train on the full dataset
+        env:
+          MAX_MAE: ${{ inputs.max_mae }}
+        run: |
+          if [ -n "$MAX_MAE" ]; then
+            python train.py --output-dir artifacts --max-mae "$MAX_MAE"
+          else
+            python train.py --output-dir artifacts
+          fi
+
+      - name: Show metrics
+        run: cat artifacts/metrics.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload model files
+        uses: actions/upload-artifact@v4
+        with:
+          name: fare-model
+          path: |
+            artifacts/uber_fare_model.pkl
+            artifacts/uber_fare_metadata.json
+            artifacts/metrics.json

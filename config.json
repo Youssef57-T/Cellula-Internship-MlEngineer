@@ -1,0 +1,24 @@
+{
+  "data_url": "https://drive.google.com/file/d/13SXMNuaNrJznox9WanKkgPjRObSX6I8M/view",
+  "random_state": 42,
+  "test_size": 0.2,
+  "model_name": "Gradient boosting (tuned)",
+  "model_params": {
+    "learning_rate": 0.1,
+    "max_iter": 200,
+    "max_leaf_nodes": 63,
+    "min_samples_leaf": 100,
+    "l2_regularization": 1.0,
+    "early_stopping": true,
+    "n_iter_no_change": 20
+  },
+  "cleaning": {
+    "min_fare": 2.5,
+    "nyc_box": {"lat_min": 40.4, "lat_max": 41.1, "lon_min": -74.4, "lon_max": -73.5},
+    "passenger_min": 1,
+    "passenger_max": 6
+  },
+  "quality_gate": {
+    "max_test_mae": 1.65
+  }
+}

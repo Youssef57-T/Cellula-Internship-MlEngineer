@@ -1,0 +1,54 @@
+{
+  "model_name": "Gradient boosting (tuned)",
+  "trained_on_rows": 385856,
+  "sklearn_version": "1.9.1",
+  "raw_features": [
+    "pickup_datetime",
+    "pickup_longitude",
+    "pickup_latitude",
+    "dropoff_longitude",
+    "dropoff_latitude",
+    "passenger_count",
+    "Car Condition",
+    "Weather",
+    "Traffic Condition"
+  ],
+  "coordinate_unit": "radians",
+  "limits": {
+    "lat_min": 40.4,
+    "lat_max": 41.1,
+    "lon_min": -74.4,
+    "lon_max": -73.5,
+    "passenger_min": 1,
+    "passenger_max": 6
+  },
+  "categories": {
+    "Car Condition": [
+      "Bad",
+      "Excellent",
+      "Good",
+      "Very Good"
+    ],
+    "Weather": [
+      "cloudy",
+      "rainy",
+      "stormy",
+      "sunny",
+      "windy"
+    ],
+    "Traffic Condition": [
+      "Congested Traffic",
+      "Dense Traffic",
+      "Flow Traffic"
+    ]
+  },
+  "training_period": [
+    "2009-01-01 00:31:32",
+    "2015-06-30 23:38:21"
+  ],
+  "test_metrics": {
+    "MAE": 1.5377961506045839,
+    "RMSE": 3.308204015908452,
+    "R2": 0.8781767660995989
+  }
+}

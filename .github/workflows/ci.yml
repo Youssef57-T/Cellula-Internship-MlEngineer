@@ -1,0 +1,42 @@
+name: CI
+
+# Runs on every push and pull request: tests for the features, the app, the committed model
+# and the training script, then a training run on the sample data with the quality gate.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Train on the sample data (quality gate)
+        run: python train.py --data tests/data/sample_trips.csv --output-dir artifacts --max-mae 5
+
+      - name: Start the app and call it
+        run: |
+          python app.py &
+          for i in $(seq 1 20); do curl -sf http://127.0.0.1:5000/health && break || sleep 1; done
+          curl -sf http://127.0.0.1:5000/health
+          curl -sf -o /dev/null -X POST http://127.0.0.1:5000/predict \
+            -d pickup_datetime=2014-06-12T18:30 -d pickup_lat=40.758 -d pickup_lon=-73.9855 \
+            -d dropoff_lat=40.6413 -d dropoff_lon=-73.7781 -d passenger_count=1 \
+            -d car_condition=Good -d weather=sunny -d "traffic_condition=Flow Traffic"

@@ -1,0 +1,33 @@
+{
+  "model_name": "Gradient boosting (tuned)",
+  "test": {
+    "MAE": 1.5377961506045839,
+    "RMSE": 3.308204015908452,
+    "R2": 0.8781767660995989
+  },
+  "train_MAE": 1.4663796999998104,
+  "baseline_median_MAE": 5.346524542580211,
+  "quality_gate": {
+    "max_test_mae": 1.65,
+    "passed": true
+  },
+  "rows": {
+    "loaded": 500000,
+    "clean": 482321,
+    "train": 385856,
+    "test": 96465
+  },
+  "rows_removed": {
+    "missing value": 5,
+    "fare below minimum": 41,
+    "passenger count out of range": 1791,
+    "pickup outside NYC area": 10138,
+    "dropoff outside NYC area": 570,
+    "distance = 0": 5095,
+    "fare > $100 for < 1 km": 39
+  },
+  "fit_seconds": 8.4,
+  "data_sha256": "52315cd8fc2f0e67877ba433bbfbb615a4ae204587b3c4e3e21208c474c2b3cd",
+  "git_commit": null,
+  "sklearn_version": "1.9.1"
+}

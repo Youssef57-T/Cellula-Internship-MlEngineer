@@ -1,0 +1,22 @@
+# Data: too large for git, downloaded by train.py and the notebook
+data.csv
+distance_check.csv
+
+# Generated files
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+artifacts/
+Task_2_v2.html
+nyc_taxi_fare_pipeline.joblib
+
+# Local environment and editor
+.venv/
+venv/
+.env
+.vscode/
+.claude/
+
+# The task brief is someone else's document; add it on purpose if you want it in the repo
+8e63e929-0480-4db5-8928-483566ee98fd.pdf

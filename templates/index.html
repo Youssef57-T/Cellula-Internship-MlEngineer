@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NYC Taxi Fare Predictor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>NYC Taxi Fare Predictor</h1>
+    <p>Enter a trip to get an estimated fare. Locations must be in the New York area.</p>
+  </header>
+
+  <main>
+    <section class="map-card">
+      <div class="map-tools">
+        <span class="tools-label">Choose on the map:</span>
+        <button type="button" class="pick" data-pick="pickup" aria-pressed="false"><span class="pin pin-pickup pin-inline">A</span>Set pickup</button>
+        <button type="button" class="pick" data-pick="dropoff" aria-pressed="false"><span class="pin pin-dropoff pin-inline">B</span>Set dropoff</button>
+        <span id="pick-hint" class="pick-hint" aria-live="polite"></span>
+      </div>
+      <div id="map"></div>
+      <div class="map-footer">
+        <p class="legend">
+          <span><i class="swatch route"></i>Route by road</span>
+          <span><i class="swatch straight"></i>Straight line (used by the model)</span>
+        </p>
+        <p id="map-info" class="map-info"></p>
+        <small>Use <b>Set pickup</b> / <b>Set dropoff</b> and click the map, or drag <b>A</b> and <b>B</b>. The route is for display only and does not change the fare.</small>
+      </div>
+    </section>
+
+    <div class="side">
+      {% if result %}
+      <section class="result" aria-live="polite">
+        <h2>Predicted fare</h2>
+        <p class="fare">${{ '%.2f'|format(result.fare) }}</p>
+        <p class="range">Typical error: ± ${{ '%.2f'|format(result.typical_error) }}</p>
+        <dl>
+          <dt>Pickup time</dt><dd>{{ result.pickup_time }}</dd>
+          <dt>Straight-line distance</dt><dd>{{ '%.2f'|format(result.trip_km) }} km</dd>
+          <dt>Airport trip</dt><dd>{{ 'Yes' if result.airport_trip else 'No' }}</dd>
+          <dt>Passengers</dt><dd>{{ result.passengers }}</dd>
+        </dl>
+        {% if result.after_training_period %}
+        <p class="note">This date is after the training data ends ({{ meta.training_period[1][:10] }}), so the estimate uses mid-2015 fare levels.</p>
+        {% endif %}
+      </section>
+      {% elif errors %}
+      <section class="result empty">
+        <h2>No prediction</h2>
+        <p>Correct the highlighted fields and submit again.</p>
+      </section>
+      {% else %}
+      <section class="result empty">
+        <h2>Predicted fare</h2>
+        <p>Fill in the trip and press <strong>Predict fare</strong>.</p>
+      </section>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('predict') }}">
+        {% if errors %}
+        <div class="alert" role="alert">
+          <strong>The fare was not predicted. Please fix the following:</strong>
+          <ul>
+            {% for message in errors.values() %}<li>{{ message }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <fieldset>
+          <legend>When</legend>
+          <label for="pickup_datetime">Pickup date and time <span class="req">*</span></label>
+          <input type="datetime-local" id="pickup_datetime" name="pickup_datetime" required min="2009-01-01T00:00"
+                 value="{{ form.pickup_datetime }}" {% if errors.pickup_datetime %}class="invalid"{% endif %}>
+          <small>New York local time.</small>
+        </fieldset>
+
+        {% for prefix, title, letter in [('pickup', 'Pickup location', 'A'), ('dropoff', 'Dropoff location', 'B')] %}
+        <fieldset>
+          <legend><span class="pin pin-{{ prefix }} pin-inline">{{ letter }}</span>{{ title }}</legend>
+          <label for="{{ prefix }}_place">Quick fill (optional)</label>
+          <select id="{{ prefix }}_place" data-fill="{{ prefix }}">
+            <option value="">Choose a landmark…</option>
+            {% for name, (lat, lon) in landmarks.items() %}
+            <option value="{{ lat }},{{ lon }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+          <div class="pair">
+            <div>
+              <label for="{{ prefix }}_lat">Latitude (°) <span class="req">*</span></label>
+              <input type="number" id="{{ prefix }}_lat" name="{{ prefix }}_lat" required step="any"
+                     min="{{ limits.lat_min }}" max="{{ limits.lat_max }}" value="{{ form[prefix ~ '_lat'] }}"
+                     {% if errors[prefix ~ '_lat'] %}class="invalid"{% endif %}>
+            </div>
+            <div>
+              <label for="{{ prefix }}_lon">Longitude (°) <span class="req">*</span></label>
+              <input type="number" id="{{ prefix }}_lon" name="{{ prefix }}_lon" required step="any"
+                     min="{{ limits.lon_min }}" max="{{ limits.lon_max }}" value="{{ form[prefix ~ '_lon'] }}"
+                     {% if errors[prefix ~ '_lon'] %}class="invalid"{% endif %}>
+            </div>
+          </div>
+          <small>Latitude {{ limits.lat_min }} to {{ limits.lat_max }}, longitude {{ limits.lon_min }} to {{ limits.lon_max }}.</small>
+        </fieldset>
+        {% endfor %}
+
+        <fieldset>
+          <legend>Trip details</legend>
+          <div class="pair">
+            <div>
+              <label for="passenger_count">Passengers <span class="req">*</span></label>
+              <input type="number" id="passenger_count" name="passenger_count" required step="1"
+                     min="{{ limits.passenger_min }}" max="{{ limits.passenger_max }}" value="{{ form.passenger_count }}"
+                     {% if errors.passenger_count %}class="invalid"{% endif %}>
+            </div>
+            {% for field, column in category_fields.items() %}
+            <div>
+              <label for="{{ field }}">{{ column }} <span class="req">*</span></label>
+              <select id="{{ field }}" name="{{ field }}" required {% if errors[field] %}class="invalid"{% endif %}>
+                {% for level in meta.categories[column] %}
+                <option value="{{ level }}" {% if form[field] == level %}selected{% endif %}>{{ level }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <button type="submit">Predict fare</button>
+        <p class="hint"><span class="req">*</span> Required field</p>
+      </form>
+
+      <p class="model">Model: {{ meta.model_name }}, trained on {{ '{:,}'.format(meta.trained_on_rows) }} trips ({{ meta.training_period[0][:4] }}–{{ meta.training_period[1][:4] }}).</p>
+    </div>
+  </main>
+
+  <script>
+    document.querySelectorAll('select[data-fill]').forEach(function (select) {
+      select.addEventListener('change', function () {
+        if (!select.value) return;
+        var parts = select.value.split(',');
+        ['_lat', '_lon'].forEach(function (suffix, i) {
+          var input = document.getElementById(select.dataset.fill + suffix);
+          input.value = parts[i];
+          input.dispatchEvent(new Event('input'));
+        });
+      });
+    });
+  </script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Map of the trip in the form. Display only: it reads and writes the form fields and never touches the prediction.
+    (function () {
+      var mapEl = document.getElementById('map');
+      var info = document.getElementById('map-info');
+      if (!window.L) {
+        mapEl.className = 'map-offline';
+        mapEl.textContent = 'The map needs an internet connection. The form still works without it.';
+        document.querySelector('.map-tools').hidden = true;
+        return;
+      }
+      // Two public OSRM servers with the same API; the second is tried if the first is slow or down.
+      var ROUTE_URLS = ['https://router.project-osrm.org/route/v1/driving/',
+                        'https://routing.openstreetmap.de/routed-car/route/v1/driving/'];
+      var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function field(prefix, axis) { return document.getElementById(prefix + '_' + axis); }
+      function point(prefix) {
+        var lat = parseFloat(field(prefix, 'lat').value), lon = parseFloat(field(prefix, 'lon').value);
+        return isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? [lat, lon] : null;
+      }
+
+      var map = L.map('map', { scrollWheelZoom: true }).setView([40.75, -73.97], 11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      L.rectangle([[{{ limits.lat_min }}, {{ limits.lon_min }}], [{{ limits.lat_max }}, {{ limits.lon_max }}]],
+                  { color: '#646b78', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(map);
+
+      var straight = L.polyline([], { color: '#eb6834', weight: 3, dashArray: '8 8', interactive: false }).addTo(map);
+      var routeLine = L.polyline([], { color: '#1f5fbf', weight: 7, opacity: 0.25, interactive: false }).addTo(map);
+      var travelled = L.polyline([], { color: '#1f5fbf', weight: 5, interactive: false }).addTo(map);
+      var car = L.marker([40.75, -73.97], {
+        interactive: false, zIndexOffset: 1000,
+        icon: L.divIcon({ className: 'car', html: '<span>🚗</span>', iconSize: [34, 34], iconAnchor: [17, 17] })
+      });
+
+      // Car animation along a list of [lat, lon] points.
+      var frame = null;
+      function drive(path) {
+        cancelAnimationFrame(frame);
+        if (path.length < 2) { car.remove(); travelled.setLatLngs([]); return; }
+        var cumulative = [0];
+        for (var i = 1; i < path.length; i++) cumulative.push(cumulative[i - 1] + map.distance(path[i - 1], path[i]));
+        var total = cumulative[cumulative.length - 1];
+        car.addTo(map);
+        var span = car.getElement().firstChild;
+        if (reduceMotion || total === 0) { car.setLatLng(path[path.length - 1]); travelled.setLatLngs(path); return; }
+
+        var duration = Math.min(12000, Math.max(4000, total / 3)), pause = 1200, start = null;
+        function step(now) {
+          if (start === null) start = now;
+          var progress = Math.min(1, ((now - start) % (duration + pause)) / duration);
+          var target = progress * total, i = 1;
+          while (i < cumulative.length - 1 && cumulative[i] < target) i++;
+          var segment = cumulative[i] - cumulative[i - 1];
+          var share = segment ? (target - cumulative[i - 1]) / segment : 0;
+          var a = path[i - 1], b = path[i];
+          var position = [a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share];
+          car.setLatLng(position);
+          travelled.setLatLngs(path.slice(0, i).concat([position]));
+          if (b[1] !== a[1]) span.style.transform = b[1] > a[1] ? 'scaleX(-1)' : 'none';   // the emoji faces left
+          frame = requestAnimationFrame(step);
+        }
+        frame = requestAnimationFrame(step);
+      }
+
+      var markers = {}, request = 0, timer = null;
+      function km(metres) { return (metres / 1000).toFixed(metres < 10000 ? 2 : 1) + ' km'; }
+
+      function loadRoute(a, b) {
+        var mine = ++request;
+        var direct = map.distance(a, b);
+        info.textContent = 'Straight line: ' + km(direct) + ' · finding the route…';
+        var query = a[1] + ',' + a[0] + ';' + b[1] + ',' + b[0] + '?overview=full&geometries=geojson';
+        function ask(server) {
+          var options = window.AbortSignal && AbortSignal.timeout ? { signal: AbortSignal.timeout(6000) } : {};
+          return fetch(ROUTE_URLS[server] + query, options)
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (!data.routes || !data.routes.length) throw new Error('no route');
+              return data.routes[0];
+            })
+            .catch(function (error) {
+              if (mine === request && server + 1 < ROUTE_URLS.length) return ask(server + 1);
+              throw error;
+            });
+        }
+        ask(0)
+          .then(function (route) {
+            if (mine !== request) return;
+            var path = route.geometry.coordinates.map(function (c) { return [c[1], c[0]]; });
+            routeLine.setLatLngs(path);
+            info.textContent = 'Route by road: ' + km(route.distance) + ', about ' + Math.max(1, Math.round(route.duration / 60)) +
+                               ' min without traffic · Straight line: ' + km(direct);
+            drive(path);
+          })
+          .catch(function () {
+            if (mine !== request) return;
+            routeLine.setLatLngs([]);
+            info.textContent = 'Straight line: ' + km(direct) + ' · the road route is not available right now.';
+            drive([a, b]);
+          });
+      }
+
+      function refresh(fit, immediate) {
+        var shown = [];
+        ['pickup', 'dropoff'].forEach(function (prefix) {
+          var p = point(prefix);
+          if (p) { markers[prefix].setLatLng(p).addTo(map); shown.push(p); } else { markers[prefix].remove(); }
+        });
+        straight.setLatLngs(shown.length === 2 ? shown : []);
+        if (fit && shown.length) map.fitBounds(L.latLngBounds(shown).pad(0.35), { maxZoom: 15 });
+
+        clearTimeout(timer);
+        request++;
+        if (shown.length < 2 || map.distance(shown[0], shown[1]) === 0) {
+          routeLine.setLatLngs([]); drive([]); info.textContent = shown.length < 2 ? '' : 'Pickup and dropoff are the same point.';
+          return;
+        }
+        timer = setTimeout(function () { loadRoute(shown[0], shown[1]); }, immediate ? 150 : 500);
+      }
+
+      [['pickup', 'A'], ['dropoff', 'B']].forEach(function (pair) {
+        var prefix = pair[0];
+        var marker = L.marker([40.75, -73.97], {
+          draggable: true, title: prefix,
+          icon: L.divIcon({ className: 'pin pin-' + prefix, html: pair[1], iconSize: [28, 28], iconAnchor: [14, 14] })
+        });
+        marker.on('dragstart', function () {
+          request++; clearTimeout(timer); cancelAnimationFrame(frame);
+          car.remove(); routeLine.setLatLngs([]); travelled.setLatLngs([]);
+        });
+        marker.on('drag', function () {
+          var position = marker.getLatLng();
+          field(prefix, 'lat').value = position.lat.toFixed(5);
+          field(prefix, 'lon').value = position.lng.toFixed(5);
+          var a = point('pickup'), b = point('dropoff');
+          straight.setLatLngs(a && b ? [a, b] : []);
+        });
+        marker.on('dragend', function () { refresh(false, true); });
+        markers[prefix] = marker;
+        ['lat', 'lon'].forEach(function (axis) {
+          field(prefix, axis).addEventListener('input', function () { refresh(true, false); });
+        });
+      });
+
+      // Choosing a location by clicking the map.
+      var picking = null;
+      var pickButtons = document.querySelectorAll('button[data-pick]');
+      var hint = document.getElementById('pick-hint');
+      function setPicking(prefix) {
+        picking = prefix;
+        pickButtons.forEach(function (button) {
+          var active = button.dataset.pick === prefix;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', active);
+        });
+        mapEl.classList.toggle('picking', !!prefix);
+        hint.textContent = prefix ? 'Click the map to place the ' + prefix + '. Press Esc to cancel.' : '';
+      }
+      pickButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          setPicking(picking === button.dataset.pick ? null : button.dataset.pick);
+        });
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') setPicking(null);
+      });
+      map.on('click', function (event) {
+        if (!picking) return;
+        field(picking, 'lat').value = event.latlng.lat.toFixed(5);
+        field(picking, 'lon').value = event.latlng.lng.toFixed(5);
+        setPicking(picking === 'pickup' ? 'dropoff' : null);   // after the pickup, carry on with the dropoff
+        refresh(false, true);
+      });
+
+      refresh(true, true);
+    })();
+  </script>
+</body>
+</html>

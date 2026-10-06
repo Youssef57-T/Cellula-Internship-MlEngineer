@@ -1,0 +1,8 @@
+# Tests, plus what is needed to re-run the notebook (Task_2_v2.ipynb).
+-r requirements.txt
+pytest==9.1.1
+matplotlib==3.11.2
+seaborn==0.13.2
+folium==0.20.0
+ipykernel==7.4.0
+nbconvert==7.17.1
