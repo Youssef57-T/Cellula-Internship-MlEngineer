@@ -26,8 +26,8 @@
     "distance = 0": 5095,
     "fare > $100 for < 1 km": 39
   },
-  "fit_seconds": 8.4,
+  "fit_seconds": 7.6,
   "data_sha256": "52315cd8fc2f0e67877ba433bbfbb615a4ae204587b3c4e3e21208c474c2b3cd",
-  "git_commit": null,
+  "git_commit": "743f062fe3016f912220f85c63ead01ec114f7bc",
   "sklearn_version": "1.9.1"
 }
