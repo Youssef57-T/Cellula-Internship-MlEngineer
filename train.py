@@ -1,7 +1,8 @@
 """Train the fare model from the command line and save it only if it passes the quality gate.
 
-This reproduces the final model of Task_2_v2.ipynb (same cleaning rules, split, features and settings),
-so the deployed model can be rebuilt without opening the notebook.
+This reproduces the final model of Task3.ipynb (same cleaning rules, split, features and settings),
+so the deployed model can be rebuilt without opening the notebook. The seven other models the notebook
+compares it with are trained and saved too, so the app can show their fares next to the deployed one.
 
     python train.py                      # full data, gate from config.json
     python train.py --data sample.csv --output-dir out --max-mae 5
@@ -9,6 +10,7 @@ so the deployed model can be rebuilt without opening the notebook.
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import time
@@ -18,20 +20,24 @@ import joblib
 import numpy as np
 import pandas as pd
 import sklearn
-from sklearn.compose import ColumnTransformer
+from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.dummy import DummyRegressor
-from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
+from sklearn.tree import DecisionTreeRegressor
 
-from trip_features import CAT_FEATURES, NUM_FEATURES, RAW_FEATURES, add_trip_features
+from trip_features import CAT_FEATURES, NUM_FEATURES, RAW_FEATURES, add_trip_features, exp_fare, log_fare
 
 BASE_DIR = Path(__file__).resolve().parent
 TARGET = 'fare_amount'
 MODEL_FILE, META_FILE, METRICS_FILE = 'uber_fare_model.pkl', 'uber_fare_metadata.json', 'metrics.json'
+# The models that are compared with the deployed one are saved here, one file each.
+OTHER_MODELS_DIR = 'models'
 # Only the columns the cleaning rules and the model need; identifiers are never loaded.
 USE_COLUMNS = RAW_FEATURES + [TARGET, 'distance']
 
@@ -79,15 +85,43 @@ def clean_trips(raw, rules):
     return raw[keep], removed
 
 
-def build_pipeline(model_params, random_state):
-    """features -> imputer / one-hot encoder -> gradient boosting, as in notebook section 6."""
-    preprocess = ColumnTransformer(
-        [('num', Pipeline([('impute', SimpleImputer(strategy='median'))]), list(NUM_FEATURES)),
-         ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), list(CAT_FEATURES))],
-        remainder='drop', verbose_feature_names_out=False)
+def make_model_pipeline(model, num=NUM_FEATURES, cat=CAT_FEATURES, scale=False, log_target=False):
+    """features -> imputer (and scaler) / one-hot encoder -> model, as in notebook section 6."""
+    num_steps = [('impute', SimpleImputer(strategy='median'))]
+    if scale:
+        num_steps.append(('scale', StandardScaler()))
+    transformers = [('num', Pipeline(num_steps), list(num))]
+    if cat:
+        transformers.append(('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), list(cat)))
+    if log_target:
+        model = TransformedTargetRegressor(regressor=model, func=log_fare, inverse_func=exp_fare, check_inverse=False)
     return Pipeline([('features', FunctionTransformer(add_trip_features)),
-                     ('prep', preprocess),
-                     ('model', HistGradientBoostingRegressor(random_state=random_state, **model_params))])
+                     ('prep', ColumnTransformer(transformers, remainder='drop', verbose_feature_names_out=False)),
+                     ('model', model)])
+
+
+def build_pipeline(model_params, random_state):
+    """The deployed model: tuned gradient boosting."""
+    return make_model_pipeline(HistGradientBoostingRegressor(random_state=random_state, **model_params))
+
+
+def other_pipelines(random_state):
+    """The seven models the deployed one is compared with, with the settings of notebook section 7."""
+    return {
+        'Gradient boosting': make_model_pipeline(HistGradientBoostingRegressor(random_state=random_state)),
+        'Random forest': make_model_pipeline(RandomForestRegressor(n_estimators=100, max_depth=14, min_samples_leaf=5,
+                                                                   max_features=0.5, max_samples=0.2, n_jobs=-1,
+                                                                   random_state=random_state)),
+        'Decision tree': make_model_pipeline(DecisionTreeRegressor(max_depth=10, min_samples_leaf=20, random_state=random_state)),
+        'Ridge: log target': make_model_pipeline(Ridge(alpha=1.0), scale=True, log_target=True),
+        'Ridge: all features': make_model_pipeline(Ridge(alpha=1.0), scale=True),
+        'Linear: distance only': make_model_pipeline(LinearRegression(), num=['trip_km'], cat=None),
+        'Median (dummy)': make_model_pipeline(DummyRegressor(strategy='median')),
+    }
+
+
+def model_file_name(name):
+    return re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_') + '.pkl'
 
 
 def regression_metrics(y_true, y_pred):
@@ -152,8 +186,19 @@ def train(data_path, output_dir, max_mae=None, config=None):
         return False, metrics
 
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / OTHER_MODELS_DIR).mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, output_dir / MODEL_FILE, compress=3)
+
+    # The gate applies to the deployed model only; the others are kept for comparison, whatever their score.
+    other_models = []
+    for name, other in other_pipelines(seed).items():
+        other.fit(X_train, y_train)
+        file = f'{OTHER_MODELS_DIR}/{model_file_name(name)}'
+        joblib.dump(other, output_dir / file, compress=3)
+        other_models.append({'name': name, 'file': file, 'test_metrics': regression_metrics(y_test, other.predict(X_test))})
+        print(f"{name:<24} test MAE ${other_models[-1]['test_metrics']['MAE']:.3f}")
+    metrics['other_models'] = {entry['name']: entry['test_metrics'] for entry in other_models}
+
     box = rules['nyc_box']
     metadata = {
         'model_name': config['model_name'],
@@ -165,12 +210,14 @@ def train(data_path, output_dir, max_mae=None, config=None):
         'categories': {col: sorted(str(level) for level in X_train[col].unique()) for col in CAT_FEATURES},
         'training_period': [str(clean['pickup_datetime'].min()), str(clean['pickup_datetime'].max())],
         'test_metrics': test,
+        'other_models': other_models,
     }
     with open(output_dir / META_FILE, 'w') as f:
         json.dump(metadata, f, indent=2)
     with open(output_dir / METRICS_FILE, 'w') as f:
         json.dump(metrics, f, indent=2)
-    print(f"Quality gate passed (limit ${max_mae:.2f}). Saved {MODEL_FILE}, {META_FILE} and {METRICS_FILE} to {output_dir}.")
+    print(f"Quality gate passed (limit ${max_mae:.2f}). Saved {MODEL_FILE}, {META_FILE}, {METRICS_FILE} "
+          f"and {len(other_models)} comparison models in {OTHER_MODELS_DIR}/ to {output_dir}.")
     return True, metrics
 
 

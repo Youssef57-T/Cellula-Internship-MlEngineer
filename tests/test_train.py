@@ -33,6 +33,13 @@ def test_training_saves_a_loadable_model(tmp_path):
     sample = pd.read_csv(SAMPLE_DATA).dropna().head(5)[metadata['raw_features']]
     assert (pipeline.predict(sample) > 0).all()
 
+    # The comparison models are saved next to it and listed in the metadata the app reads.
+    assert len(metadata['other_models']) == 7
+    for entry in metadata['other_models']:
+        other = joblib.load(tmp_path / entry['file'])
+        assert (other.predict(sample) > 0).all()
+        assert entry['test_metrics'] == metrics['other_models'][entry['name']]
+
 
 def test_quality_gate_blocks_a_model_that_is_not_good_enough(tmp_path):
     passed, metrics = train.train(SAMPLE_DATA, tmp_path, max_mae=0.01)
@@ -40,6 +47,7 @@ def test_quality_gate_blocks_a_model_that_is_not_good_enough(tmp_path):
     assert not passed
     assert not metrics['quality_gate']['passed']
     assert not (tmp_path / train.MODEL_FILE).exists()
+    assert not (tmp_path / train.OTHER_MODELS_DIR).exists()
 
 
 def test_command_line_exit_code_follows_the_gate(tmp_path):

@@ -9,9 +9,36 @@
 </head>
 <body>
   <header>
-    <h1>NYC Taxi Fare Predictor</h1>
-    <p>Enter a trip to get an estimated fare. Locations must be in the New York area.</p>
+    <div class="bar">
+      <div>
+        <h1>NYC Taxi Fare Predictor</h1>
+        <p>Enter a trip to get an estimated fare. The model was trained on New York trips.</p>
+      </div>
+      <p class="model"><b>{{ meta.model_name }}</b> · typical error ± ${{ '%.2f'|format(meta.test_metrics.MAE) }} · trained on {{ '{:,}'.format(meta.trained_on_rows) }} trips ({{ meta.training_period[0][:4] }}–{{ meta.training_period[1][:4] }})</p>
+    </div>
   </header>
+
+  {# Test-set accuracy of every model; after a prediction it also lists the fare each one gives. #}
+  {% macro models_table(show_fare) %}
+        {% set top_fare = models|map(attribute='fare')|max if show_fare else 0 %}
+        <table class="models">
+          <caption>{{ 'All models' if show_fare else 'Model accuracy' }}</caption>
+          <thead>
+            <tr><th scope="col">Model</th>{% if show_fare %}<th scope="col">Fare</th>{% endif %}<th scope="col">MAE</th><th scope="col">R²</th></tr>
+          </thead>
+          <tbody>
+            {% for model in models %}
+            <tr {% if model.best %}class="best"{% endif %}{% if show_fare %} style="--share: {{ '%.1f'|format(100 * model.fare / top_fare) if top_fare > 0 else 0 }}"{% endif %}>
+              <th scope="row">{{ model.name }}{% if model.best %} <span class="tag">best</span>{% endif %}</th>
+              {% if show_fare %}<td>${{ '%.2f'|format(model.fare) }}</td>{% endif %}
+              <td class="mae">${{ '%.2f'|format(model.mae) }}</td>
+              <td class="r2">{{ '%.3f'|format(model.r2) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <small>Measured on the test set, most accurate first. <b>MAE</b> is the average error in dollars (lower is better); <b>R²</b> is the share of fare variation explained (higher is better). <b>Best</b> has the lowest MAE.{% if show_fare %} The large figure above is from {{ meta.model_name }}.{% endif %}</small>
+  {% endmacro %}
 
   <main>
     <section class="map-card">
@@ -19,6 +46,7 @@
         <span class="tools-label">Choose on the map:</span>
         <button type="button" class="pick" data-pick="pickup" aria-pressed="false"><span class="pin pin-pickup pin-inline">A</span>Set pickup</button>
         <button type="button" class="pick" data-pick="dropoff" aria-pressed="false"><span class="pin pin-dropoff pin-inline">B</span>Set dropoff</button>
+        <button type="button" class="swap" id="swap" title="Swap pickup and dropoff">⇄ Swap</button>
         <span id="pick-hint" class="pick-hint" aria-live="polite"></span>
       </div>
       <div id="map"></div>
@@ -33,36 +61,9 @@
     </section>
 
     <div class="side">
-      {% if result %}
-      <section class="result" aria-live="polite">
-        <h2>Predicted fare</h2>
-        <p class="fare">${{ '%.2f'|format(result.fare) }}</p>
-        <p class="range">Typical error: ± ${{ '%.2f'|format(result.typical_error) }}</p>
-        <dl>
-          <dt>Pickup time</dt><dd>{{ result.pickup_time }}</dd>
-          <dt>Straight-line distance</dt><dd>{{ '%.2f'|format(result.trip_km) }} km</dd>
-          <dt>Airport trip</dt><dd>{{ 'Yes' if result.airport_trip else 'No' }}</dd>
-          <dt>Passengers</dt><dd>{{ result.passengers }}</dd>
-        </dl>
-        {% if result.after_training_period %}
-        <p class="note">This date is after the training data ends ({{ meta.training_period[1][:10] }}), so the estimate uses mid-2015 fare levels.</p>
-        {% endif %}
-      </section>
-      {% elif errors %}
-      <section class="result empty">
-        <h2>No prediction</h2>
-        <p>Correct the highlighted fields and submit again.</p>
-      </section>
-      {% else %}
-      <section class="result empty">
-        <h2>Predicted fare</h2>
-        <p>Fill in the trip and press <strong>Predict fare</strong>.</p>
-      </section>
-      {% endif %}
-
-      <form method="post" action="{{ url_for('predict') }}">
+      <form method="post" action="{{ url_for('predict', _anchor='outcome') }}">
         {% if errors %}
-        <div class="alert" role="alert">
+        <div class="alert" id="outcome" role="alert">
           <strong>The fare was not predicted. Please fix the following:</strong>
           <ul>
             {% for message in errors.values() %}<li>{{ message }}</li>{% endfor %}
@@ -92,17 +93,16 @@
             <div>
               <label for="{{ prefix }}_lat">Latitude (°) <span class="req">*</span></label>
               <input type="number" id="{{ prefix }}_lat" name="{{ prefix }}_lat" required step="any"
-                     min="{{ limits.lat_min }}" max="{{ limits.lat_max }}" value="{{ form[prefix ~ '_lat'] }}"
+                     min="-90" max="90" value="{{ form[prefix ~ '_lat'] }}"
                      {% if errors[prefix ~ '_lat'] %}class="invalid"{% endif %}>
             </div>
             <div>
               <label for="{{ prefix }}_lon">Longitude (°) <span class="req">*</span></label>
               <input type="number" id="{{ prefix }}_lon" name="{{ prefix }}_lon" required step="any"
-                     min="{{ limits.lon_min }}" max="{{ limits.lon_max }}" value="{{ form[prefix ~ '_lon'] }}"
+                     min="-180" max="180" value="{{ form[prefix ~ '_lon'] }}"
                      {% if errors[prefix ~ '_lon'] %}class="invalid"{% endif %}>
             </div>
           </div>
-          <small>Latitude {{ limits.lat_min }} to {{ limits.lat_max }}, longitude {{ limits.lon_min }} to {{ limits.lon_max }}.</small>
         </fieldset>
         {% endfor %}
 
@@ -131,8 +131,40 @@
         <button type="submit">Predict fare</button>
         <p class="hint"><span class="req">*</span> Required field</p>
       </form>
+    </div>
 
-      <p class="model">Model: {{ meta.model_name }}, trained on {{ '{:,}'.format(meta.trained_on_rows) }} trips ({{ meta.training_period[0][:4] }}–{{ meta.training_period[1][:4] }}).</p>
+    {# The outcome spans the full width, under the map and the form. #}
+    <div class="results">
+      {% if result %}
+      <section class="result" id="outcome" aria-live="polite">
+        <div class="summary">
+          <h2>Predicted fare</h2>
+          <p class="fare">${{ '%.2f'|format(result.fare) }}</p>
+          <p class="range">Typical error: ± ${{ '%.2f'|format(result.typical_error) }}</p>
+          <dl>
+            <dt>Pickup time</dt><dd>{{ result.pickup_time }}</dd>
+            <dt>Straight-line distance</dt><dd>{{ '%.2f'|format(result.trip_km) }} km</dd>
+            <dt>Airport trip</dt><dd>{{ 'Yes' if result.airport_trip else 'No' }}</dd>
+            <dt>Passengers</dt><dd>{{ result.passengers }}</dd>
+          </dl>
+          {% if result.after_training_period %}
+          <p class="note">This date is after the training data ends ({{ meta.training_period[1][:10] }}), so the estimate uses mid-2015 fare levels.</p>
+          {% endif %}
+        </div>
+        <div class="board">
+        {{ models_table(true) }}
+        </div>
+      </section>
+      {% else %}
+      <section class="result empty">
+        <h2>{{ 'No prediction' if errors else 'Predicted fare' }}</h2>
+        <p class="fare-idle" aria-hidden="true">$--.--</p>
+        <p>{% if errors %}Correct the highlighted fields and submit again.{% else %}Fill in the trip and press <strong>Predict fare</strong>.{% endif %}</p>
+      </section>
+      <section class="result board">
+        {{ models_table(false) }}
+      </section>
+      {% endif %}
     </div>
   </main>
 
@@ -147,6 +179,27 @@
           input.dispatchEvent(new Event('input'));
         });
       });
+    });
+
+    document.getElementById('swap').addEventListener('click', function () {
+      ['_lat', '_lon', '_place'].forEach(function (suffix) {
+        var a = document.getElementById('pickup' + suffix), b = document.getElementById('dropoff' + suffix);
+        var held = a.value;
+        a.value = b.value;
+        b.value = held;
+      });
+      document.getElementById('pickup_lat').dispatchEvent(new Event('input'));
+    });
+
+    // The eight models take a moment, so the button shows that the trip was sent.
+    var submit = document.querySelector('form button[type="submit"]');
+    submit.form.addEventListener('submit', function () {
+      submit.disabled = true;
+      submit.textContent = 'Predicting…';
+    });
+    window.addEventListener('pageshow', function () {
+      submit.disabled = false;
+      submit.textContent = 'Predict fare';
     });
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -176,8 +229,6 @@
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
-      L.rectangle([[{{ limits.lat_min }}, {{ limits.lon_min }}], [{{ limits.lat_max }}, {{ limits.lon_max }}]],
-                  { color: '#646b78', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(map);
 
       var straight = L.polyline([], { color: '#eb6834', weight: 3, dashArray: '8 8', interactive: false }).addTo(map);
       var routeLine = L.polyline([], { color: '#1f5fbf', weight: 7, opacity: 0.25, interactive: false }).addTo(map);
@@ -284,7 +335,7 @@
           car.remove(); routeLine.setLatLngs([]); travelled.setLatLngs([]);
         });
         marker.on('drag', function () {
-          var position = marker.getLatLng();
+          var position = marker.getLatLng().wrap();
           field(prefix, 'lat').value = position.lat.toFixed(5);
           field(prefix, 'lon').value = position.lng.toFixed(5);
           var a = point('pickup'), b = point('dropoff');
@@ -321,8 +372,9 @@
       });
       map.on('click', function (event) {
         if (!picking) return;
-        field(picking, 'lat').value = event.latlng.lat.toFixed(5);
-        field(picking, 'lon').value = event.latlng.lng.toFixed(5);
+        var position = event.latlng.wrap();   // the map repeats sideways, so bring the longitude back to -180..180
+        field(picking, 'lat').value = position.lat.toFixed(5);
+        field(picking, 'lon').value = position.lng.toFixed(5);
         setPicking(picking === 'pickup' ? 'dropoff' : null);   // after the pickup, carry on with the dropoff
         refresh(false, true);
       });

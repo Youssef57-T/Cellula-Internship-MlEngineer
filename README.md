@@ -1,6 +1,6 @@
 # NYC Taxi Fare Predictor — Task 3: Model Deployment
 
-A Flask web app that predicts the fare of a New York taxi trip. It serves the model trained in `Task_2_v2.ipynb`.
+A Flask web app that predicts the fare of a New York taxi trip. It serves the model trained in `Task3.ipynb`.
 
 ## Run the app
 
@@ -20,6 +20,7 @@ The app needs these four files in the same folder as `app.py`:
 | `uber_fare_model.pkl` | The saved pipeline: feature engineering, imputer, encoder and the model |
 | `uber_fare_metadata.json` | Valid input ranges and category values, written by the notebook |
 | `trip_features.py` | The feature functions the pipeline refers to |
+| `models/` | The seven other models of the comparison, one file each. Optional: a model whose file is missing is left out of the page |
 | `templates/`, `static/` | The page and its stylesheet |
 
 The model and metadata files are produced by `python train.py`, or by section 12 of the notebook; both give the same model. `scikit-learn` must stay at the version pinned in `requirements.txt`, because that is the version that saved the model.
@@ -28,7 +29,7 @@ The model and metadata files are produced by `python train.py`, or by section 12
 
 | File | Task part |
 |---|---|
-| `Task_2_v2.ipynb` | EDA, preprocessing pipeline and all models. Section 12 holds Part A (comparison table and justification) and Part B (saving the model) |
+| `Task3.ipynb` | EDA, preprocessing pipeline and all models. Section 12 holds Part A (comparison table and justification) and Part B (saving the model) |
 | `uber_fare_model.pkl`, `uber_fare_metadata.json`, `trip_features.py` | Part B |
 | `app.py`, `templates/index.html`, `static/style.css` | Part C |
 | `screenshots/` | Part D |
@@ -56,11 +57,13 @@ The full table, with training error, prediction speed and file size, and the wri
 
 Every form submission goes through the same steps as the training data, in the same order:
 
-1. **Validation.** The input is checked with the cleaning rules from Task 2: a parsable date, 1–6 passengers, pickup and dropoff inside the New York area, and two different locations. The limits are read from `uber_fare_metadata.json`, so they are the ones the notebook used.
+1. **Validation.** The input is checked for a parsable date, 1–6 passengers, valid coordinates and two different locations. The passenger limits are read from `uber_fare_metadata.json`, so they are the ones the notebook used. Pickup and dropoff can be anywhere in the world, but the model was trained on New York trips only, so a fare for a trip elsewhere is an extrapolation.
 2. **Units.** Coordinates are typed in degrees and converted to radians, the unit of the dataset.
 3. **The saved pipeline.** `pipeline.predict` runs `add_trip_features` (distance, airport distances, time features), the imputer and one-hot encoder, and then the model. The app contains no feature code of its own.
 
-The model and metadata are loaded once when the app starts.
+The large fare on the page is the deployed model's. Under it, the **All models** table shows the fare each of the eight models gives for the same trip, with its test MAE, ordered from the most to the least accurate. The other seven go through the same steps; each is a complete saved pipeline in `models/`.
+
+The models and metadata are loaded once when the app starts.
 
 If the input is invalid, the page shows what to fix and no fare is predicted.
 
@@ -98,9 +101,9 @@ config.json ──► train.py ──► quality gate ──► uber_fare_model.
 
 | Step | Command | What it does |
 |---|---|---|
-| Train | `python train.py` | Downloads `data.csv` if it is missing, applies the Task 2 cleaning rules, trains the tuned gradient boosting pipeline and scores it on the 20% test set |
+| Train | `python train.py` | Downloads `data.csv` if it is missing, applies the Task 2 cleaning rules, trains the tuned gradient boosting pipeline and scores it on the 20% test set. It then trains the seven other models and saves them to `models/` |
 | Quality gate | part of `train.py` | If the test MAE is above the limit in `config.json` ($1.65), nothing is saved and the command exits with an error |
-| Test | `pytest` | 38 tests: feature code, the app (valid and invalid input), the committed model files, and the training script on a 5,000-trip sample |
+| Test | `pytest` | 42 tests: feature code, the app (valid and invalid input), the committed model files, and the training script on a 5,000-trip sample |
 | CI | `.github/workflows/ci.yml` | On every push and pull request: runs the tests, trains on the sample with the gate, then starts the app and calls it |
 | Retrain | `.github/workflows/train.yml` | Started by hand from the GitHub Actions tab: trains on the full dataset with the gate and attaches the model files to the run |
 

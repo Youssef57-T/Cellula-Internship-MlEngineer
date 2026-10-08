@@ -49,3 +49,4 @@ jobs:
             artifacts/uber_fare_model.pkl
             artifacts/uber_fare_metadata.json
             artifacts/metrics.json
+            artifacts/models/

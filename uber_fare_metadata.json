@@ -50,5 +50,70 @@
     "MAE": 1.5377961506045839,
     "RMSE": 3.308204015908452,
     "R2": 0.8781767660995989
-  }
+  },
+  "other_models": [
+    {
+      "name": "Gradient boosting",
+      "file": "models/gradient_boosting.pkl",
+      "test_metrics": {
+        "MAE": 1.621061835233186,
+        "RMSE": 3.3935699259949104,
+        "R2": 0.8718085204991637
+      }
+    },
+    {
+      "name": "Random forest",
+      "file": "models/random_forest.pkl",
+      "test_metrics": {
+        "MAE": 1.6927769797754249,
+        "RMSE": 3.483676603063076,
+        "R2": 0.8649106168786089
+      }
+    },
+    {
+      "name": "Decision tree",
+      "file": "models/decision_tree.pkl",
+      "test_metrics": {
+        "MAE": 1.8692356409129793,
+        "RMSE": 3.683166127969944,
+        "R2": 0.848996097569774
+      }
+    },
+    {
+      "name": "Ridge: log target",
+      "file": "models/ridge_log_target.pkl",
+      "test_metrics": {
+        "MAE": 1.9917748231674663,
+        "RMSE": 4.206658210640639,
+        "R2": 0.8030209632399934
+      }
+    },
+    {
+      "name": "Ridge: all features",
+      "file": "models/ridge_all_features.pkl",
+      "test_metrics": {
+        "MAE": 2.119727942696987,
+        "RMSE": 4.095017402829124,
+        "R2": 0.8133375084258221
+      }
+    },
+    {
+      "name": "Linear: distance only",
+      "file": "models/linear_distance_only.pkl",
+      "test_metrics": {
+        "MAE": 2.33866404720165,
+        "RMSE": 4.486097675063472,
+        "R2": 0.7759819537017443
+      }
+    },
+    {
+      "name": "Median (dummy)",
+      "file": "models/median_dummy.pkl",
+      "test_metrics": {
+        "MAE": 5.346524542580211,
+        "RMSE": 9.885643654402354,
+        "R2": -0.08781603932320547
+      }
+    }
+  ]
 }

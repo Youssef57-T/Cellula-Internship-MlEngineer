@@ -1,14 +1,40 @@
 :root {
-  --bg: #f6f7f9;
+  color-scheme: light dark;
+  --bg: #f4f3ef;
   --surface: #ffffff;
-  --ink: #16181d;
-  --muted: #646b78;
-  --line: #d9dde4;
+  --field: #ffffff;
+  --ink: #17181c;
+  --muted: #62666f;
+  --line: #dcdad3;
   --accent: #1f5fbf;
-  --accent-dark: #174a96;
+  --on-accent: #ffffff;
+  --taxi: #f7c518;
+  --taxi-dark: #e3b30a;
+  --taxi-ink: #1a1500;
+  --meter: #15171b;
   --straight: #eb6834;
   --error: #b3261e;
   --error-bg: #fdecea;
+  --note-bg: #fff4d1;
+  --shadow: 0 1px 2px rgba(20, 22, 26, 0.05), 0 6px 20px rgba(20, 22, 26, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101114;
+    --surface: #191b20;
+    --field: #111317;
+    --ink: #eceef2;
+    --muted: #9aa0ab;
+    --line: #2c3038;
+    --accent: #6ea3f2;
+    --on-accent: #0c1626;
+    --meter: #0b0c0e;
+    --error: #f2857d;
+    --error-bg: #3a1a18;
+    --note-bg: #3a3113;
+    --shadow: none;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -20,29 +46,36 @@ body {
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-header, main { max-width: 1320px; margin: 0 auto; padding: 0 16px; }
-header { padding-top: 16px; }
-h1 { margin: 0 0 2px; font-size: 24px; }
-header p { margin: 0 0 12px; color: var(--muted); }
+/* Dark bar with the checker band of a New York cab under it. */
+header { background: #15171b; color: #f3f2ee; }
+header::after { content: ""; display: block; height: 12px; background: repeating-conic-gradient(#15171b 0 25%, var(--taxi) 0 50%) 0 0 / 12px 12px; }
+.bar, main { max-width: 1320px; margin: 0 auto; padding: 0 16px; }
+.bar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 6px 24px; padding-top: 14px; padding-bottom: 14px; }
+h1 { margin: 0 0 2px; font-size: 24px; letter-spacing: -0.01em; }
+header p { margin: 0; color: #a9aba6; }
+.model { font-size: 13px; }
+.model b { color: var(--taxi); font-weight: 600; }
 
-/* The map is the main section; the result and the form sit in a side column. */
-main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 18px; align-items: start; padding-bottom: 28px; }
+/* The map and the form share the first row; the result spans the full width under them. */
+main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 18px; align-items: stretch; padding-top: 18px; padding-bottom: 28px; }
 
-.map-card, form, .result { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-.map-card { position: sticky; top: 14px; overflow: hidden; }
+.map-card, form { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.map-card { display: flex; flex-direction: column; overflow: hidden; }
 .map-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--line); }
 .tools-label { font-weight: 600; }
-.pick { display: inline-flex; align-items: center; padding: 5px 12px 5px 8px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-weight: 500; cursor: pointer; }
-.pick:hover { border-color: var(--accent); }
-.pick.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.pick, .swap { display: inline-flex; align-items: center; padding: 5px 12px 5px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--field); color: var(--ink); font: inherit; font-weight: 500; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.swap { padding-left: 12px; }
+.pick:hover, .swap:hover { border-color: var(--ink); }
+.pick.active { border-color: var(--ink); background: var(--ink); color: var(--surface); }
 .pick-hint { color: var(--muted); font-size: 13px; }
-#map { height: calc(100vh - 262px); min-height: 440px; }
+#map { flex: 1; min-height: 440px; }
 #map.picking { cursor: crosshair; }
+.leaflet-container { font: inherit; }
 .map-offline { display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: var(--muted); background: var(--bg); }
 .map-footer { padding: 10px 16px 12px; border-top: 1px solid var(--line); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; font-size: 13px; }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
-.swatch { display: inline-block; width: 26px; height: 0; border-top: 4px solid var(--accent); }
+.swatch { display: inline-block; width: 26px; height: 0; border-top: 4px solid #1f5fbf; }
 .swatch.straight { border-top: 3px dashed var(--straight); }
 .map-info { margin: 5px 0 3px; font-weight: 600; min-height: 1.45em; }
 
@@ -53,16 +86,16 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 18px; al
 .car { display: flex; align-items: center; justify-content: center; font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)); }
 .car span { display: inline-block; }
 
-.side { display: grid; gap: 14px; }
-form, .result { padding: 14px 16px; }
+form { padding: 14px 16px; }
 
 fieldset { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 8px 0 10px; }
 fieldset:first-of-type { border-top: 0; padding-top: 0; }
 legend { padding: 0; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 
 label { display: block; margin: 7px 0 3px; font-weight: 500; }
-input, select { width: 100%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
-input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+input, select { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--field); color: var(--ink); font: inherit; transition: border-color 0.15s; }
+input:hover, select:hover { border-color: var(--muted); }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 input.invalid, select.invalid { border-color: var(--error); background: var(--error-bg); }
 small { display: block; margin-top: 4px; color: var(--muted); font-size: 12.5px; }
 
@@ -70,24 +103,63 @@ small { display: block; margin-top: 4px; color: var(--muted); font-size: 12.5px;
 .req { color: var(--error); }
 .hint { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
 
-form button { margin-top: 6px; width: 100%; padding: 10px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-form button:hover { background: var(--accent-dark); }
+form button { margin-top: 6px; width: 100%; padding: 11px; border: 0; border-radius: 8px; background: var(--taxi); color: var(--taxi-ink); font: inherit; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+form button:hover { background: var(--taxi-dark); }
+form button:disabled { opacity: 0.7; cursor: progress; }
 
 .alert { margin-bottom: 12px; padding: 10px 14px; border: 1px solid var(--error); border-radius: 8px; background: var(--error-bg); color: var(--error); }
 .alert ul { margin: 6px 0 0; padding-left: 20px; }
 
+/* The result is a taxi meter: dark in both themes, so it sets its own colours for everything inside it. */
+.result {
+  --ink: #f1f1ee;
+  --muted: #a3a59f;
+  --line: #30333a;
+  --accent: var(--taxi);
+  --on-accent: var(--taxi-ink);
+  --note-bg: rgba(247, 197, 24, 0.14);
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--meter);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+#outcome { scroll-margin-top: 14px; }
+.results { grid-column: 1 / -1; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 18px; align-items: start; }
+/* After a prediction there is one card, split the same way: the fare on the left, the models on the right. */
+.results > .result:only-child { grid-column: 1 / -1; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px 36px; align-items: start; }
 .result h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.fare { margin: 4px 0 0; font-size: 44px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+.fare, .fare-idle { margin: 4px 0 0; font-size: 52px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1.1; }
+.fare-idle { opacity: 0.3; }
 .range { margin: 2px 0 12px; color: var(--muted); }
-.result.empty p { margin: 8px 0 0; color: var(--muted); }
+.result.empty p:last-child { margin: 6px 0 0; color: var(--muted); }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
 dt { color: var(--muted); }
 dd { margin: 0; text-align: right; font-weight: 500; }
-.note { margin: 12px 0 0; padding: 8px 10px; border-radius: 6px; background: #fff6dd; font-size: 13px; }
-.model { margin: 0 2px; color: var(--muted); font-size: 12.5px; }
+.models { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 13.5px; }
+.models caption { padding: 10px 0 4px; border-top: 1px solid var(--line); text-align: left; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.models th, .models td { padding: 4px 0; border-top: 1px solid var(--line); text-align: right; font-weight: 500; white-space: nowrap; }
+.models th:first-child { text-align: left; white-space: normal; }
+.models thead th { border-top: 0; color: var(--muted); font-weight: 400; }
+.models thead th + th { padding-left: 10px; }
+.models td { padding-left: 10px; font-variant-numeric: tabular-nums; }
+/* A bar under each model name, as long as its fare is next to the highest fare in the table. */
+.models tbody th { position: relative; padding-bottom: 9px; }
+.models tbody th::after { content: ""; position: absolute; left: 0; bottom: 3px; width: calc(var(--share, 0) * 1%); height: 3px; border-radius: 2px; background: var(--muted); opacity: 0.55; }
+.models .best th, .models .best td { color: var(--accent); font-weight: 700; }
+.models .best th::after { background: var(--accent); opacity: 1; }
+.board .models { margin-top: 0; }
+.board .models caption { padding-top: 0; border-top: 0; }
+.tag { margin-left: 4px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 600; }
+.note { margin: 12px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--note-bg); font-size: 13px; }
 
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; }
-  .map-card { position: static; }
-  #map { height: 340px; min-height: 0; }
+  #map { flex: none; height: 340px; min-height: 0; }
+  .results, .results > .result:only-child { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }

@@ -1,4 +1,4 @@
-"""Flask app that serves taxi-fare predictions from the pipeline saved by Task_2_v2.ipynb.
+"""Flask app that serves taxi-fare predictions from the pipeline saved by Task3.ipynb.
 
 Run with:  python app.py   then open http://127.0.0.1:5000
 """
@@ -29,6 +29,8 @@ COORD_FIELDS = {
     'dropoff_lat': ('Dropoff latitude', 'lat'),
     'dropoff_lon': ('Dropoff longitude', 'lon'),
 }
+# Any point on Earth is accepted; the model itself was trained on New York trips only.
+COORD_MAX = {'lat': 90, 'lon': 180}
 CATEGORY_FIELDS = {
     'car_condition': 'Car Condition',
     'weather': 'Weather',
@@ -46,7 +48,7 @@ LANDMARKS = {
 
 # Loaded once, when the app starts - never per request.
 if not MODEL_PATH.exists() or not META_PATH.exists():
-    raise SystemExit(f"Missing {MODEL_PATH.name} or {META_PATH.name}. Run section 12 of Task_2_v2.ipynb first.")
+    raise SystemExit(f"Missing {MODEL_PATH.name} or {META_PATH.name}. Run section 12 of Task3.ipynb first.")
 pipeline = joblib.load(MODEL_PATH)
 with open(META_PATH) as f:
     meta = json.load(f)
@@ -55,6 +57,15 @@ TRAINING_END = datetime.fromisoformat(meta['training_period'][1])
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# The models the deployed one was compared with. Their fares are shown next to the main one.
+other_models = []
+for entry in meta.get('other_models', []):
+    if (BASE_DIR / entry['file']).exists():
+        other_models.append({'name': entry['name'], 'mae': entry['test_metrics']['MAE'], 'r2': entry['test_metrics']['R2'],
+                             'pipeline': joblib.load(BASE_DIR / entry['file'])})
+    else:
+        app.logger.warning('%s is missing, so "%s" is not shown. Run train.py to create it.', entry['file'], entry['name'])
 
 
 def default_form():
@@ -72,7 +83,7 @@ def default_form():
 
 
 def parse_form(form):
-    """Check the submitted strings against the Task 2 cleaning rules.
+    """Check the submitted strings. Locations may be anywhere; the other fields follow the Task 2 cleaning rules.
 
     Returns (values, errors): typed values for the fields that are valid, and one message per invalid field.
     """
@@ -95,7 +106,7 @@ def parse_form(form):
             errors['pickup_datetime'] = 'Pickup date must be 1 January 2009 or later.'
 
     for field, (label, axis) in COORD_FIELDS.items():
-        low, high = LIMITS[f'{axis}_min'], LIMITS[f'{axis}_max']
+        high = COORD_MAX[axis]
         raw = form.get(field, '').strip()
         if not raw:
             errors[field] = f'{label} is required.'
@@ -106,8 +117,8 @@ def parse_form(form):
             number = math.nan
         if not math.isfinite(number):
             errors[field] = f'{label} must be a number.'
-        elif not low <= number <= high:
-            errors[field] = f'{label} must be between {low:.2f} and {high:.2f} (the New York area).'
+        elif not -high <= number <= high:
+            errors[field] = f'{label} must be between -{high} and {high}.'
         else:
             values[field] = number
 
@@ -120,7 +131,7 @@ def parse_form(form):
     raw = form.get('passenger_count', '').strip()
     if not raw:
         errors['passenger_count'] = 'Number of passengers is required.'
-    elif not re.fullmatch(r'\d+', raw) or not low <= int(raw) <= high:
+    elif not re.fullmatch(r'[0-9]{1,9}', raw) or not low <= int(raw) <= high:
         errors['passenger_count'] = f'Passengers must be a whole number from {low} to {high}.'
     else:
         values['passenger_count'] = int(raw)
@@ -159,8 +170,23 @@ def trip_summary(frame):
     }
 
 
+def model_rows(frame=None):
+    """Every loaded model with its test-set MAE and R2, most accurate first. With a trip, also the fare each one predicts."""
+    deployed = {'name': meta['model_name'], 'mae': meta['test_metrics']['MAE'], 'r2': meta['test_metrics']['R2'],
+                'pipeline': pipeline}
+    rows = []
+    for model in sorted([deployed] + other_models, key=lambda model: model['mae']):
+        rows.append({'name': model['name'], 'mae': model['mae'], 'r2': model['r2'], 'deployed': model is deployed,
+                     'fare': None if frame is None else float(model['pipeline'].predict(frame)[0])})
+    # The real fare of a submitted trip is unknown, so the best model is the one with the lowest error on the test set.
+    for position, row in enumerate(rows):
+        row['best'] = position == 0
+    return rows
+
+
 def render_page(form, errors=None, result=None, status=200):
     return render_template('index.html', form=form, errors=errors or {}, result=result, meta=meta, limits=LIMITS,
+                           models=result['models'] if result else model_rows(),
                            landmarks=LANDMARKS, category_fields=CATEGORY_FIELDS), status
 
 
@@ -177,9 +203,11 @@ def predict():
         return render_page(form, errors=errors, status=400)
 
     frame = to_model_frame(values)
-    fare = float(pipeline.predict(frame)[0])
+    models = model_rows(frame)
+    fare = next(model['fare'] for model in models if model['deployed'])
     result = {
         'fare': fare,
+        'models': models,
         'typical_error': meta['test_metrics']['MAE'],
         'after_training_period': values['pickup_datetime'] > TRAINING_END,
         'pickup_time': values['pickup_datetime'].strftime('%a %d %b %Y, %H:%M'),
@@ -193,7 +221,7 @@ def predict():
 @app.get('/health')
 def health():
     return jsonify(status='ok', model=meta['model_name'], sklearn_version=meta['sklearn_version'],
-                   test_mae=meta['test_metrics']['MAE'])
+                   test_mae=meta['test_metrics']['MAE'], other_models=[other['name'] for other in other_models])
 
 
 @app.errorhandler(Exception)
